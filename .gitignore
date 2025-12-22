@@ -4,3 +4,4 @@
 (alternate)-Update-and-Deploy-RSS-Feed.yml
 deploy.yml
 upload.yml
+rss-pipeline-old.yml

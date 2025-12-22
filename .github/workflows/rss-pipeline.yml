@@ -1,73 +1,60 @@
 name: RSS Feed Pipeline
 
-# ------------------------------------------------------------
-# Trigger: This workflow can be started manually (workflow_dispatch),
-# or triggered remotely via GitHub CLI/API from your NAS/container.
-# It accepts an input parameter (rss_file) so you can specify
-# the path to the RSS file dynamically.
-# ------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# Trigger: workflow_dispatch
+# This allows the workflow to be triggered remotely via the GitHub CLI (gh).
+# The 'rss_file' input receives the actual TEXT CONTENT of the XML file,
+# not a file path, because we use the '-F' flag in the run script.
+# ------------------------------------------------------------------------------
 on:
   workflow_dispatch:
     inputs:
       rss_file:
-        description: "Path to the RSS file to upload"
+        description: 'The content of the RSS feed XML'
         required: true
-        default: "rss.xml"
 
 jobs:
-  upload-and-publish:
+  update-feed:
     runs-on: ubuntu-latest
+    
+    # Grant permission to commit and push changes to the repository
+    permissions:
+      contents: write
 
     steps:
-      # --------------------------------------------------------
+      # ------------------------------------------------------------------------
       # Step 1: Checkout the repository
-      # --------------------------------------------------------
+      # We need the current git history to commit on top of it.
+      # ------------------------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # --------------------------------------------------------
-      # Step 2: Upload rss.xml as an artifact
-      # Uses the input provided when triggering the workflow.
-      # --------------------------------------------------------
-      - name: Upload RSS artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: rss-feed
-          path: ${{ github.event.inputs.rss_file }}
-
-      # --------------------------------------------------------
-      # Step 3: Download the artifact immediately
-      # This simulates chaining the upload and publish steps.
-      # --------------------------------------------------------
-      - name: Download RSS artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: rss-feed
-          path: ./feed
-
-      # --------------------------------------------------------
-      # Step 4: Place rss.xml into repo root
-      # --------------------------------------------------------
-      - name: Place RSS file
+      # ------------------------------------------------------------------------
+      # Step 2: Write the Input to a File
+      # We dump the input variable (the XML content) into 'rss.xml'.
+      # Using an environment variable is safer for handling large multi-line strings.
+      # ------------------------------------------------------------------------
+      - name: Write RSS file
+        env:
+          RSS_CONTENT: ${{ inputs.rss_file }}
         run: |
-          cp ./feed/rss.xml ./rss.xml
+          echo "$RSS_CONTENT" > rss.xml
 
-      # --------------------------------------------------------
-      # Step 5: Commit the updated rss.xml
-      # --------------------------------------------------------
-      - name: Commit RSS update
+      # ------------------------------------------------------------------------
+      # Step 3: Commit and Push
+      # Configures a bot user, checks for changes, and pushes if necessary.
+      # ------------------------------------------------------------------------
+      - name: Commit and Push
         run: |
-          git config --global user.email "rss-feed@example.com"
-          git config --global user.name "RSS Feed Bot"
+          git config --global user.name "RSS Filter Bot"
+          git config --global user.email "bot@rssfilter"
+          
           git add rss.xml
-          git commit -m "Update feed $(date -u +"%Y-%m-%dT%H:%M:%SZ")" || echo "No changes to commit"
-          git push origin main
-
-      # --------------------------------------------------------
-      # Step 6: Deploy to GitHub Pages
-      # --------------------------------------------------------
-      - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v4
-        with:
-          branch: gh-pages
-          folder: .
+          
+          # git diff-index --quiet HEAD returns 0 (true) if no changes, 1 (false) if changes exist.
+          if git diff-index --quiet HEAD; then
+            echo "No changes detected. Skipping commit."
+          else
+            git commit -m "Update RSS feed [$(date -u +'%Y-%m-%dT%H:%M:%SZ')]"
+            git push origin main
+          fi
